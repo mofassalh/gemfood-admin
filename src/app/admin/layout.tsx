@@ -92,7 +92,7 @@ const navItems: NavItem[] = [
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [userEmail, setUserEmail] = useState('')
-  const [staff, setStaff] = useState<any>({ role: 'owner', permissions: {} })
+  const [staff, setStaff] = useState<any>({ role: '', permissions: {} })
   const [loadingAuth, setLoadingAuth] = useState(true)
   const [locations, setLocations] = useState<any[]>([])
   const [selectedLocation, setSelectedLocation] = useState<string>('All Locations')
@@ -107,15 +107,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
       setUserEmail(user.email || '')
+      // Only people listed in the staff table (and active) may use the admin panel.
+      // Anyone else who is logged in (e.g. a customer account) is signed out.
+      const deny = async () => { await supabase.auth.signOut(); router.push('/login?error=no-access') }
       try {
+        let member: any = null
         const { data: staffData } = await supabase.from('staff').select('*').eq('auth_id', user.id).maybeSingle()
-        if (staffData) setStaff(staffData)
-        else {
-          const { data: ownerData } = await supabase.from('staff').select('*').eq('email', user.email).maybeSingle()
-          if (ownerData) { await supabase.from('staff').update({ auth_id: user.id }).eq('id', ownerData.id); setStaff({ ...ownerData, auth_id: user.id }) }
-          else setStaff({ role: 'owner', permissions: {}, name: user.email })
+        if (staffData) member = staffData
+        else if (user.email) {
+          const { data: byEmail } = await supabase.from('staff').select('*').eq('email', user.email).maybeSingle()
+          if (byEmail) { await supabase.from('staff').update({ auth_id: user.id }).eq('id', byEmail.id); member = { ...byEmail, auth_id: user.id } }
         }
-      } catch { setStaff({ role: 'owner', permissions: {}, name: user.email }) }
+        if (!member || member.active === false) { await deny(); return }
+        setStaff(member)
+      } catch { await deny(); return }
       const { data: locsData } = await supabase.from('locations').select('*').eq('is_active', true).order('name')
       if (locsData) setLocations(locsData)
       setLoadingAuth(false)
