@@ -114,9 +114,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         let member: any = null
         const { data: staffData } = await supabase.from('staff').select('*').eq('auth_id', user.id).maybeSingle()
         if (staffData) member = staffData
-        else if (user.email) {
-          const { data: byEmail } = await supabase.from('staff').select('*').eq('email', user.email).maybeSingle()
-          if (byEmail) { await supabase.from('staff').update({ auth_id: user.id }).eq('id', byEmail.id); member = { ...byEmail, auth_id: user.id } }
+        else {
+          // First login of a staff member the owner added by email: the database links the account
+          const { data: linked } = await supabase.rpc('link_staff_account')
+          if (Array.isArray(linked) && linked.length > 0) member = linked[0]
         }
         if (!member || member.active === false) { await deny(); return }
         setStaff(member)
